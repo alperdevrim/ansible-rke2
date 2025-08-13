@@ -1,0 +1,14 @@
+---
+- name: Copy Registries File
+  hosts: rke2_cluster
+  become: yes
+  gather_facts: no
+  
+  tasks:
+    - name: Copy registries.yaml to nodes
+      copy:
+        src: ../files/registries.yaml
+        dest: /etc/rancher/rke2/registries.yaml
+        mode: '0644'
+        owner: root
+        group: root

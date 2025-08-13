@@ -1,0 +1,128 @@
+---
+- name: Install RKE2 Cluster
+  hosts: rke2_cluster
+  become: yes
+  gather_facts: yes
+  vars:
+    rke2_version: "v1.30.3+rke2r1"
+    
+  pre_tasks:
+    - name: Set hostname based on IP address
+      hostname:
+        name: "{{ node_name }}"
+      vars:
+        node_name: >-
+          {%- if ansible_default_ipv4.address == '10.68.22.60' -%}
+            master-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.65' -%}
+            master-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.66' -%}
+            master-3
+          {%- elif ansible_default_ipv4.address == '10.68.22.61' -%}
+            worker-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.62' -%}
+            worker-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.63' -%}
+            worker-3
+          {%- else -%}
+            {{ inventory_hostname }}
+          {%- endif -%}
+
+    - name: Update /etc/hosts with new hostname
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ node_name }}"
+        create: yes
+      vars:
+        node_name: >-
+          {%- if ansible_default_ipv4.address == '10.68.22.60' -%}
+            master-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.65' -%}
+            master-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.66' -%}
+            master-3
+          {%- elif ansible_default_ipv4.address == '10.68.22.61' -%}
+            worker-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.62' -%}
+            worker-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.63' -%}
+            worker-3
+          {%- else -%}
+            {{ inventory_hostname }}
+          {%- endif -%}
+
+    - name: Update system packages
+      package:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    - name: Update system packages (Ubuntu/Debian)
+      apt:
+        upgrade: dist
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install required packages
+      package:
+        name:
+          - curl
+          - wget
+        state: present
+
+    - name: Check if swap is enabled
+      shell: swapon --show
+      register: swap_status
+      changed_when: false
+      failed_when: false
+
+    - name: Disable swap if enabled
+      shell: swapoff -a
+      when: swap_status.stdout != ""
+
+    - name: Remove swap entries from /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: '.*swap.*'
+        state: absent
+      when: swap_status.stdout != ""
+
+    - name: Display swap status
+      debug:
+        msg: "Swap was {{ 'disabled' if swap_status.stdout != '' else 'already disabled' }}"
+
+- name: Configure RKE2 Server Nodes
+  hosts: rke2_servers
+  become: yes
+  serial: 1
+  roles:
+    - rke2-server
+  post_tasks:
+    - name: Wait for RKE2 server to be ready
+      wait_for:
+        port: 6443
+        host: "{{ ansible_default_ipv4.address }}"
+        timeout: 300
+
+- name: Configure RKE2 Agent Nodes  
+  hosts: rke2_agents
+  become: yes
+  roles:
+    - rke2-agent
+  post_tasks:
+    - name: Wait for node to join cluster
+      pause:
+        seconds: 30
+
+- name: Verify Cluster Installation
+  hosts: rke2_servers[0]
+  become: yes
+  tasks:
+    - name: Check cluster nodes
+      shell: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get nodes
+      register: cluster_nodes
+      
+    - name: Display cluster status
+      debug:
+        msg: "{{ cluster_nodes.stdout_lines }}"

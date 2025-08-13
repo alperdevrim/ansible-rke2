@@ -1,0 +1,102 @@
+---
+- name: Create RKE2 directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ rke2_server_config_dir }}"
+    - "{{ rke2_data_dir }}"
+
+- name: Download RKE2 installation script
+  get_url:
+    url: https://get.rke2.io
+    dest: /tmp/rke2-install.sh
+    mode: '0755'
+
+- name: Install RKE2 server
+  shell: |
+    INSTALL_RKE2_VERSION={{ rke2_version }} \
+    INSTALL_RKE2_CHANNEL={{ rke2_channel }} \
+    INSTALL_RKE2_METHOD={{ rke2_method }} \
+    /tmp/rke2-install.sh
+  args:
+    creates: /usr/local/bin/rke2
+
+- name: Generate server token for first server
+  shell: openssl rand -hex 32
+  register: rke2_token_result
+  when: inventory_hostname == groups['rke2_servers'][0]
+  run_once: true
+  delegate_to: "{{ groups['rke2_servers'][0] }}"
+
+- name: Set server token fact
+  set_fact:
+    rke2_server_token: "{{ hostvars[groups['rke2_servers'][0]]['rke2_token_result']['stdout'] }}"
+
+- name: Create RKE2 server config file
+  template:
+    src: server-config.yaml.j2
+    dest: "{{ rke2_server_config_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  notify: restart rke2-server
+
+- name: Create systemd service file for RKE2 server
+  copy:
+    src: /usr/local/lib/systemd/system/rke2-server.service
+    dest: /etc/systemd/system/rke2-server.service
+    remote_src: yes
+  notify:
+    - reload systemd
+    - restart rke2-server
+
+- name: Enable and start RKE2 server service
+  systemd:
+    name: rke2-server
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Wait for RKE2 server to be ready
+  wait_for:
+    port: 6443
+    host: "{{ ansible_default_ipv4.address }}"
+    timeout: 300
+
+- name: Create kubectl symlink
+  file:
+    src: /var/lib/rancher/rke2/bin/kubectl
+    dest: /usr/local/bin/kubectl
+    state: link
+
+- name: Create kubeconfig directory for root
+  file:
+    path: /root/.kube
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Copy kubeconfig for root
+  copy:
+    src: /etc/rancher/rke2/rke2.yaml
+    dest: /root/.kube/config
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Get join token from first server
+  slurp:
+    src: /var/lib/rancher/rke2/server/node-token
+  register: rke2_join_token
+  when: inventory_hostname == groups['rke2_servers'][0]
+  run_once: true
+
+- name: Set join token fact
+  set_fact:
+    rke2_node_token: "{{ hostvars[groups['rke2_servers'][0]]['rke2_join_token']['content'] | b64decode | trim }}"

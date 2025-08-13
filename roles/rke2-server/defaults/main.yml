@@ -1,0 +1,23 @@
+---
+# RKE2 Server Role Defaults
+rke2_version: "v1.30.3+rke2r1"
+rke2_channel: "stable"
+rke2_method: "tar"
+rke2_binary_url: "https://github.com/rancher/rke2/releases/download"
+
+# Server configuration
+rke2_server_config_dir: "/etc/rancher/rke2"
+rke2_data_dir: "/var/lib/rancher/rke2"
+rke2_server_config_file: "{{ rke2_server_config_dir }}/config.yaml"
+
+# Cluster configuration
+rke2_cluster_domain: "cluster.local"
+rke2_service_cidr: "10.43.0.0/16"
+rke2_pod_cidr: "10.42.0.0/16"
+
+# TLS and certificates
+rke2_tls_san: []
+rke2_server_taint: true
+
+# CNI
+rke2_cni: "canal"

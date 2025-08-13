@@ -1,0 +1,11 @@
+mirrors:
+  "10.68.22.57":
+    endpoint:
+      - "http://10.68.22.57"
+configs:
+  "10.68.22.57":
+    auth:
+      username: admin
+      password: nsWp9o1VyzRQZXd3
+    tls:
+      insecure_skip_verify: true

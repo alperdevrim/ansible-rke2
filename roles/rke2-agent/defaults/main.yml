@@ -1,0 +1,16 @@
+---
+# RKE2 Agent Role Defaults
+rke2_version: "v1.30.3+rke2r1"
+rke2_channel: "stable"
+rke2_method: "tar"
+
+# Agent configuration
+rke2_agent_config_dir: "/etc/rancher/rke2"
+rke2_data_dir: "/var/lib/rancher/rke2"
+rke2_agent_config_file: "{{ rke2_agent_config_dir }}/config.yaml"
+
+# Node labels (optional)
+rke2_node_labels: []
+
+# Node taints (optional)
+rke2_node_taints: []

@@ -1,0 +1,131 @@
+---
+- name: Rename Kubernetes Nodes
+  hosts: rke2_cluster
+  become: yes
+  gather_facts: yes
+  vars:
+    kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+    
+  tasks:
+    - name: Stop RKE2 services on all nodes
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - rke2-server
+        - rke2-agent
+      ignore_errors: yes
+
+    - name: Set new hostnames based on IP
+      hostname:
+        name: "{{ new_hostname }}"
+      vars:
+        new_hostname: >-
+          {%- if ansible_default_ipv4.address == '10.68.22.60' -%}
+            master-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.65' -%}
+            master-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.66' -%}
+            master-3
+          {%- elif ansible_default_ipv4.address == '10.68.22.61' -%}
+            worker-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.62' -%}
+            worker-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.63' -%}
+            worker-3
+          {%- else -%}
+            {{ inventory_hostname }}
+          {%- endif -%}
+
+    - name: Update /etc/hosts with new hostname
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ new_hostname }}"
+        create: yes
+      vars:
+        new_hostname: >-
+          {%- if ansible_default_ipv4.address == '10.68.22.60' -%}
+            master-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.65' -%}
+            master-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.66' -%}
+            master-3
+          {%- elif ansible_default_ipv4.address == '10.68.22.61' -%}
+            worker-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.62' -%}
+            worker-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.63' -%}
+            worker-3
+          {%- else -%}
+            {{ inventory_hostname }}
+          {%- endif -%}
+
+    - name: Update RKE2 server config with new node name
+      lineinfile:
+        path: /etc/rancher/rke2/config.yaml
+        regexp: '^node-name:'
+        line: "node-name: {{ new_hostname }}"
+        create: yes
+      vars:
+        new_hostname: >-
+          {%- if ansible_default_ipv4.address == '10.68.22.60' -%}
+            master-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.65' -%}
+            master-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.66' -%}
+            master-3
+          {%- elif ansible_default_ipv4.address == '10.68.22.61' -%}
+            worker-1
+          {%- elif ansible_default_ipv4.address == '10.68.22.62' -%}
+            worker-2
+          {%- elif ansible_default_ipv4.address == '10.68.22.63' -%}
+            worker-3
+          {%- else -%}
+            {{ inventory_hostname }}
+          {%- endif -%}
+
+- name: Restart RKE2 Services
+  hosts: rke2_servers
+  become: yes
+  serial: 1
+  tasks:
+    - name: Start RKE2 server service
+      systemd:
+        name: rke2-server
+        state: started
+        enabled: yes
+        
+    - name: Wait for server to be ready
+      wait_for:
+        port: 6443
+        host: "{{ ansible_default_ipv4.address }}"
+        timeout: 300
+
+- name: Restart RKE2 Agent Services
+  hosts: rke2_agents  
+  become: yes
+  tasks:
+    - name: Start RKE2 agent service
+      systemd:
+        name: rke2-agent
+        state: started
+        enabled: yes
+        
+    - name: Wait for agent to join
+      pause:
+        seconds: 30
+
+- name: Verify New Node Names
+  hosts: rke2_servers[0]
+  become: yes
+  tasks:
+    - name: Check new node names
+      shell: "{{ kubectl_cmd }} get nodes"
+      register: renamed_nodes
+      vars:
+        kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+      
+    - name: Display renamed nodes
+      debug:
+        msg: "{{ renamed_nodes.stdout_lines }}"

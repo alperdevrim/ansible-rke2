@@ -1,0 +1,56 @@
+---
+- name: Copy Files to RKE2 Nodes
+  hosts: rke2_cluster
+  become: yes
+  gather_facts: no
+  
+  vars:
+    # Define files to copy - customize these as needed
+    files_to_copy:
+      - src: files/registries.yaml
+        dest: /etc/rancher/rke2/registries.yaml
+        mode: '0644'
+        owner: root
+        group: root
+        
+  tasks:
+    - name: Ensure destination directories exist
+      file:
+        path: "{{ item.dest | dirname }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      loop: "{{ files_to_copy }}"
+      
+    - name: Copy files to nodes
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode | default('0644') }}"
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        backup: yes
+      loop: "{{ files_to_copy }}"
+      notify: restart rke2
+      
+    - name: Verify files were copied
+      stat:
+        path: "{{ item.dest }}"
+      register: copied_files
+      loop: "{{ files_to_copy }}"
+      
+    - name: Display copy results
+      debug:
+        msg: "{{ item.item.dest }} - Exists: {{ item.stat.exists }}, Size: {{ item.stat.size | default('N/A') }} bytes"
+      loop: "{{ copied_files.results }}"
+      
+  handlers:
+    - name: restart rke2
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - rke2-server
+        - rke2-agent
+      ignore_errors: yes

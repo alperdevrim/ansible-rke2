@@ -1,0 +1,39 @@
+# RKE2 Server Configuration
+{% if inventory_hostname == groups['rke2_servers'][0] %}
+# First server node - cluster init
+cluster-init: true
+{% else %}
+# Additional server nodes - join existing cluster  
+server: https://{{ hostvars[groups['rke2_servers'][0]]['ansible_default_ipv4']['address'] }}:9345
+{% endif %}
+
+token: {{ rke2_server_token }}
+
+# Networking
+cluster-domain: {{ rke2_cluster_domain }}
+service-cidr: {{ rke2_service_cidr }}
+cluster-cidr: {{ rke2_pod_cidr }}
+cni: {{ rke2_cni }}
+
+# TLS SANs
+{% if rke2_tls_san is defined and rke2_tls_san | length > 0 %}
+tls-san:
+{% for san in rke2_tls_san %}
+  - {{ san }}
+{% endfor %}
+{% endif %}
+
+# Node configuration
+node-name: {% if hostvars[inventory_hostname]['ansible_default_ipv4']['address'] == '10.68.22.60' %}master-1{% elif hostvars[inventory_hostname]['ansible_default_ipv4']['address'] == '10.68.22.65' %}master-2{% elif hostvars[inventory_hostname]['ansible_default_ipv4']['address'] == '10.68.22.66' %}master-3{% else %}{{ inventory_hostname }}{% endif %}
+
+{% if rke2_server_taint %}
+node-taint:
+  - "CriticalAddonsOnly=true:NoExecute"
+{% endif %}
+
+# Data directory
+data-dir: {{ rke2_data_dir }}
+
+# Disable components (optional)
+# disable:
+#   - rke2-ingress-nginx

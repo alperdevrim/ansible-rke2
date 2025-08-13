@@ -1,0 +1,21 @@
+---
+# Global variables for RKE2 cluster deployment
+
+# RKE2 version and channel
+rke2_version: "v1.32.7+rke2r1"
+rke2_channel: "stable"
+
+# Cluster networking configuration
+rke2_cluster_domain: "cluster.local"
+rke2_service_cidr: "10.43.0.0/16"
+rke2_pod_cidr: "10.42.0.0/16"
+
+# CNI plugin
+rke2_cni: "canal"
+
+# System configuration
+timezone: "UTC"
+
+# SSH and connection settings
+ansible_ssh_pipelining: true
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

@@ -1,0 +1,72 @@
+---
+- name: Label Kubernetes Nodes
+  hosts: rke2_servers[0]
+  become: yes
+  gather_facts: no
+  vars:
+    kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+    
+  tasks:
+    - name: Wait for all nodes to be ready
+      shell: "{{ kubectl_cmd }} get nodes --no-headers | wc -l"
+      register: node_count
+      until: node_count.stdout|int == 6
+      retries: 30
+      delay: 10
+      
+    - name: Get current node names with IPs
+      shell: "{{ kubectl_cmd }} get nodes -o wide --no-headers"
+      register: nodes_with_ips
+      
+    - name: Display current nodes
+      debug:
+        msg: "Current nodes: {{ nodes_with_ips.stdout_lines }}"
+        
+    - name: Set node mapping based on actual node names
+      set_fact:
+        node_mapping:
+          master-1: "trdrvl9ap0031"    # 10.68.22.60
+          master-2: "trdrvl9ap0036"    # 10.68.22.65  
+          master-3: "trdrvl9ap0037"    # 10.68.22.66
+          worker-1: "trdrvl9ap0032"    # 10.68.22.61
+          worker-2: "trdrvl9ap0033"    # 10.68.22.62
+          worker-3: "trdrvl9ap0034"    # 10.68.22.63
+
+    - name: Display node mapping
+      debug:
+        msg: "Node mapping: {{ node_mapping }}"
+        
+    - name: Label master nodes
+      shell: "{{ kubectl_cmd }} label node {{ node_mapping[item.role] }} node-role.kubernetes.io/{{ item.role }}= --overwrite"
+      loop:
+        - { role: "master-1" }
+        - { role: "master-2" }
+        - { role: "master-3" }
+      when: node_mapping[item.role] is defined
+      
+    - name: Label worker nodes  
+      shell: "{{ kubectl_cmd }} label node {{ node_mapping[item.role] }} node-role.kubernetes.io/{{ item.role }}= --overwrite"
+      loop:
+        - { role: "worker-1" }
+        - { role: "worker-2" }
+        - { role: "worker-3" }
+      when: node_mapping[item.role] is defined
+      
+    - name: Add cluster-role labels
+      shell: "{{ kubectl_cmd }} label node {{ node_mapping[item.role] }} cluster-role={{ item.role }} --overwrite"
+      loop:
+        - { role: "master-1" }
+        - { role: "master-2" }
+        - { role: "master-3" }
+        - { role: "worker-1" }
+        - { role: "worker-2" }
+        - { role: "worker-3" }
+      when: node_mapping[item.role] is defined
+      
+    - name: Display final node labels
+      shell: "{{ kubectl_cmd }} get nodes --show-labels"
+      register: labeled_nodes
+      
+    - name: Show labeled nodes
+      debug:
+        msg: "{{ labeled_nodes.stdout_lines }}"

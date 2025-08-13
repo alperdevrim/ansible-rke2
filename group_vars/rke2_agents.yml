@@ -1,0 +1,10 @@
+---
+# Variables specific to RKE2 agent nodes (workers)
+
+# Worker node labels
+rke2_node_labels:
+  - "node-role.kubernetes.io/worker=true"
+
+# Optional: Worker node taints
+# rke2_node_taints:
+#   - "workload=gpu:NoSchedule"

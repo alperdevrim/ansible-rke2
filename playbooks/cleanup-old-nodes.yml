@@ -1,0 +1,27 @@
+---
+- name: Remove Old Kubernetes Nodes
+  hosts: rke2_servers[0]
+  become: yes
+  gather_facts: no
+  vars:
+    kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+    
+  tasks:
+    - name: Remove old NotReady nodes
+      shell: "{{ kubectl_cmd }} delete node {{ item }}"
+      loop:
+        - trdrvl9ap0031
+        - trdrvl9ap0032
+        - trdrvl9ap0033
+        - trdrvl9ap0034
+        - trdrvl9ap0036
+        - trdrvl9ap0037
+      ignore_errors: yes
+      
+    - name: Verify clean cluster
+      shell: "{{ kubectl_cmd }} get nodes"
+      register: clean_nodes
+      
+    - name: Display final cluster
+      debug:
+        msg: "{{ clean_nodes.stdout_lines }}"

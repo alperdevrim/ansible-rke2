@@ -1,0 +1,197 @@
+---
+- name: Uninstall RKE2 Cluster
+  hosts: rke2_cluster
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    - name: Stop RKE2 server service
+      systemd:
+        name: rke2-server
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+      
+    - name: Stop RKE2 agent service
+      systemd:
+        name: rke2-agent
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+      
+    - name: Run RKE2 server uninstall script
+      shell: /usr/local/bin/rke2-uninstall.sh
+      ignore_errors: yes
+      when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
+      
+    - name: Run RKE2 agent uninstall script
+      shell: /usr/local/bin/rke2-agent-uninstall.sh
+      ignore_errors: yes
+      when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
+      
+    - name: Remove RKE2 systemd service files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/rke2-server.service
+        - /etc/systemd/system/rke2-agent.service
+        - /usr/local/lib/systemd/system/rke2-server.service
+        - /usr/local/lib/systemd/system/rke2-agent.service
+      ignore_errors: yes
+      
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+        
+    - name: Remove RKE2 configuration directory
+      file:
+        path: /etc/rancher/rke2
+        state: absent
+        
+    - name: Remove RKE2 data directory
+      file:
+        path: /var/lib/rancher/rke2
+        state: absent
+        
+    - name: Remove RKE2 runtime directory
+      file:
+        path: /run/k3s
+        state: absent
+        
+    - name: Remove RKE2 binary directory
+      file:
+        path: /var/lib/rancher/rke2/bin
+        state: absent
+        
+    - name: Remove RKE2 install directory
+      file:
+        path: /usr/local/bin/rke2*
+        state: absent
+        
+    - name: Find and remove RKE2 binaries
+      shell: find /usr/local/bin -name "*rke2*" -delete
+      ignore_errors: yes
+      
+    - name: Remove kubectl symlink
+      file:
+        path: /usr/local/bin/kubectl
+        state: absent
+      ignore_errors: yes
+      
+    - name: Remove crictl symlink
+      file:
+        path: /usr/local/bin/crictl
+        state: absent
+      ignore_errors: yes
+      
+    - name: Remove ctr symlink
+      file:
+        path: /usr/local/bin/ctr
+        state: absent
+      ignore_errors: yes
+      
+    - name: Stop and disable containerd
+      systemd:
+        name: containerd
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+      
+    - name: Remove containerd configuration
+      file:
+        path: /etc/containerd
+        state: absent
+      ignore_errors: yes
+      
+    - name: Remove network interfaces created by RKE2
+      shell: |
+        for interface in $(ip link show | grep -E "(cni|flannel|veth)" | awk -F: '{print $2}' | tr -d ' '); do
+          ip link delete $interface 2>/dev/null || true
+        done
+      ignore_errors: yes
+      
+    - name: Remove iptables rules created by RKE2
+      shell: |
+        iptables -t nat -F
+        iptables -t mangle -F  
+        iptables -F
+        iptables -X
+      ignore_errors: yes
+      
+    - name: Clean up container runtime
+      shell: |
+        # Remove all containers
+        crictl rm --force $(crictl ps -aq) 2>/dev/null || true
+        # Remove all pods  
+        crictl rmp --force $(crictl pods -q) 2>/dev/null || true
+        # Remove all images
+        crictl rmi --prune 2>/dev/null || true
+      ignore_errors: yes
+      
+    - name: Remove CNI configuration
+      file:
+        path: /etc/cni
+        state: absent
+      ignore_errors: yes
+      
+    - name: Remove CNI binaries
+      file:
+        path: /opt/cni
+        state: absent  
+      ignore_errors: yes
+      
+    - name: Clean up mount points
+      shell: |
+        # Unmount any RKE2 related mounts
+        for mount in $(mount | grep -E "(rke2|rancher)" | awk '{print $3}'); do
+          umount -f $mount 2>/dev/null || true
+        done
+      ignore_errors: yes
+      
+    - name: Remove RKE2 logs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/log/rke2.log
+        - /var/log/pods
+        - /var/log/containers
+      ignore_errors: yes
+      
+    - name: Revert hostname changes (optional)
+      hostname:
+        name: "{{ inventory_hostname }}"
+      when: revert_hostnames | default(false) | bool
+      
+    - name: Update /etc/hosts to revert hostname (optional)
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ inventory_hostname }}"
+      when: revert_hostnames | default(false) | bool
+      
+    - name: Final cleanup - remove any remaining RKE2 processes
+      shell: |
+        pkill -f rke2 || true
+        pkill -f containerd || true  
+        pkill -f kubelet || true
+      ignore_errors: yes
+      
+    - name: Verify uninstallation
+      shell: |
+        echo "=== Checking for remaining RKE2 processes ==="
+        ps aux | grep -E "(rke2|containerd|kubelet)" | grep -v grep || echo "No RKE2 processes found"
+        echo "=== Checking for remaining RKE2 files ==="
+        find /etc /var/lib /usr/local/bin -name "*rke2*" 2>/dev/null || echo "No RKE2 files found"
+      register: cleanup_verification
+      ignore_errors: yes
+      
+    - name: Display cleanup verification
+      debug:
+        msg: "{{ cleanup_verification.stdout_lines }}"
+        
+    - name: Reboot servers (optional)
+      reboot:
+        reboot_timeout: 300
+      when: reboot_after_uninstall | default(false) | bool
